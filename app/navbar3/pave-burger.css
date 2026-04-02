@@ -1,0 +1,112 @@
+/**
+ * Mirrors pave.ai `.c-burger` (see assets/styles/main.css on https://pave.ai/ ):
+ * two 48×2px bars; on hover (pointer:fine) ::before slides out, ::after wipes in, staggered.
+ */
+.pave-burger {
+  --burger-easing: cubic-bezier(0.38, 0.09, 0, 1);
+  --burger-hover-out-duration: 230ms;
+  --burger-hover-in-duration: 580ms;
+  --burger-hover-stagger: 100ms;
+  position: relative;
+  width: 100%;
+  max-width: 48px;
+}
+
+.pave-burger_line {
+  position: relative;
+  display: block;
+  width: 48px;
+  height: 2px;
+  overflow: hidden;
+}
+
+.pave-burger_line + .pave-burger_line {
+  margin-top: 4px;
+}
+
+.pave-burger_line::before,
+.pave-burger_line::after {
+  content: "";
+  width: 100%;
+  height: 100%;
+  background-color: currentColor;
+}
+
+.pave-burger_line::before {
+  display: block;
+  transition-property: transform;
+  transition-timing-function: var(--burger-easing);
+}
+
+@media (pointer: fine) {
+  .pave-burger:hover .pave-burger_line::before,
+  .pave-burger:focus-visible .pave-burger_line::before {
+    transform: translate3d(100%, 0, 0);
+    transition-duration: var(--burger-hover-out-duration);
+  }
+}
+
+.pave-burger:not(:hover):not(:focus-visible) .pave-burger_line::before {
+  transform: translate3d(0, 0, 0);
+  transition-duration: var(--burger-hover-in-duration);
+}
+
+.pave-burger_line::after {
+  position: absolute;
+  inset: 0;
+  transition-property: transform;
+  transition-timing-function: var(--burger-easing);
+}
+
+@media (pointer: fine) {
+  .pave-burger:hover .pave-burger_line::after,
+  .pave-burger:focus-visible .pave-burger_line::after {
+    transform: translate3d(0, 0, 0);
+    transition-duration: var(--burger-hover-in-duration);
+  }
+}
+
+.pave-burger:not(:hover):not(:focus-visible) .pave-burger_line::after {
+  transform: translate3d(-100%, 0, 0);
+  transition-duration: var(--burger-hover-out-duration);
+}
+
+.pave-burger:not(:hover):not(:focus-visible) .pave-burger_line:nth-of-type(1)::before {
+  transition-delay: var(--burger-hover-stagger);
+}
+
+.pave-burger:not(:hover):not(:focus-visible) .pave-burger_line:nth-of-type(2)::before {
+  transition-delay: calc(2 * var(--burger-hover-stagger));
+}
+
+@media (pointer: fine) {
+  .pave-burger:hover .pave-burger_line:nth-of-type(1)::after,
+  .pave-burger:focus-visible .pave-burger_line:nth-of-type(1)::after {
+    transition-delay: var(--burger-hover-stagger);
+  }
+
+  .pave-burger:hover .pave-burger_line:nth-of-type(2)::before,
+  .pave-burger:focus-visible .pave-burger_line:nth-of-type(2)::before {
+    transition-delay: var(--burger-hover-stagger);
+  }
+
+  .pave-burger:hover .pave-burger_line:nth-of-type(2)::after,
+  .pave-burger:focus-visible .pave-burger_line:nth-of-type(2)::after {
+    transition-delay: calc(2 * var(--burger-hover-stagger));
+  }
+}
+
+.pave-burger:not(:hover):not(:focus-visible) .pave-burger_line:nth-of-type(1)::after {
+  transition-delay: var(--burger-hover-stagger);
+}
+
+@media (pointer: fine) {
+  .pave-burger:hover .pave-burger_line:nth-of-type(1)::before,
+  .pave-burger:focus-visible .pave-burger_line:nth-of-type(1)::before {
+    transition-delay: 0ms;
+  }
+}
+
+.pave-burger:not(:hover):not(:focus-visible) .pave-burger_line:nth-of-type(2)::after {
+  transition-delay: var(--burger-hover-stagger);
+}

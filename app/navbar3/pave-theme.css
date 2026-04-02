@@ -1,0 +1,18 @@
+/**
+ * PAVE replica fonts only (@theme tokens live in app/globals.css for reliable Tailwind output).
+ */
+@font-face {
+  font-family: "Helvetica Now Text";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://pave.ai/assets/fonts/HelveticaNowText-Regular.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Helvetica Now Micro";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("https://pave.ai/assets/fonts/HelveticaNowMicro-Regular.woff2") format("woff2");
+}

@@ -10,6 +10,13 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  /* /navbar3 PAVE replica — utilities always generated (fonts load via app/navbar3/pave-theme.css) */
+  --font-pave-text: "Helvetica Now Text", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-pave-menu: "Helvetica Now Micro", "Helvetica Now Text", -apple-system,
+    BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --color-pave-primary: #1f66f1;
+  --color-pave-menu-screen: #3b67f2;
 }
 
 @media (prefers-color-scheme: dark) {
