@@ -26,16 +26,16 @@ import {
   PAVE_INNER_CLIP_EASE,
   PAVE_INNER_CLIP_MS,
   PAVE_LABEL_SMALL,
+  PAVE_CURTAIN_CLOSE_EASE,
+  PAVE_CURTAIN_CLOSE_MS,
+  PAVE_MENU_CLIP_CURTAIN_CLOSED,
   PAVE_MENU_NAV,
   PAVE_MENU_SEAM_OFFSET_X_PX,
   PAVE_MENU_SLIT_HALF_PX,
-  PAVE_OUTER_CLIP_CLOSE_EASE,
-  PAVE_OUTER_CLIP_CLOSE_MS,
   PAVE_OVERLAY_COL_LEFT,
   PAVE_OVERLAY_COL_RIGHT,
-  PAVE_OVERLAY_NAV_AFTER_REVERSE_MS,
+  PAVE_OVERLAY_NAV_AFTER_CURTAIN_MS,
   PAVE_OVERLAY_NAV_LINK,
-  PAVE_OVERLAY_UNMOUNT_MS,
   PAVE_WIPE_PHASE1_EASE,
   PAVE_WIPE_PHASE1_MS,
   PAVE_WIPE_PHASE2_EASE,
@@ -59,9 +59,6 @@ const BAR_INSET =
 const MENU_CLIP_DOT = 'inset(48% 48% 48% 48%)'
 
 type MenuOpeningStage = 'idle' | 'growV' | 'growH' | 'open'
-
-/** Outer clip reverse: full → slit (phase2), then slit → dot (phase1) */
-type CloseClipPhase = null | 'toSlit' | 'toDot'
 
 function menuSlitClip(isDesktop: boolean) {
   if (!isDesktop) {
@@ -101,18 +98,17 @@ export default function Navbar3Page() {
   const router = useRouter()
   const overlayNavAfterCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const menuOpenRef = useRef(false)
-  const closeClipPhaseRef = useRef<CloseClipPhase>(null)
+  const overlayVisibleRef = useRef(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [overlayVisible, setOverlayVisible] = useState(false)
   const [overlayAnimIn, setOverlayAnimIn] = useState(false)
   const [openingStage, setOpeningStage] = useState<MenuOpeningStage>('idle')
-  const [closeClipPhase, setCloseClipPhase] = useState<CloseClipPhase>(null)
   const [overlayContentIdle, setOverlayContentIdle] = useState(false)
   const isDesktop = useMinWidth700()
   const overlayRef = useRef<HTMLDivElement>(null)
 
   menuOpenRef.current = menuOpen
-  closeClipPhaseRef.current = closeClipPhase
+  overlayVisibleRef.current = overlayVisible
 
   const menuContentVisible = useMemo(
     () =>
@@ -193,7 +189,7 @@ export default function Navbar3Page() {
       overlayNavAfterCloseRef.current = setTimeout(() => {
         overlayNavAfterCloseRef.current = null
         router.push(href)
-      }, PAVE_OVERLAY_NAV_AFTER_REVERSE_MS)
+      }, PAVE_OVERLAY_NAV_AFTER_CURTAIN_MS)
     },
     [menuOpen, router],
   )
@@ -209,7 +205,6 @@ export default function Navbar3Page() {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!menuOpen) return
-    setCloseClipPhase(null)
     setOverlayVisible(true)
     setOpeningStage('idle')
     let cancelled = false
@@ -233,25 +228,18 @@ export default function Navbar3Page() {
   }, [menuOpen])
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  /* Fully open → reverse wipe starts same frame (before paint) */
-  useLayoutEffect(() => {
-    if (menuOpen) return
-    if (openingStage !== 'open') return
-    setCloseClipPhase((p) => (p === null ? 'toSlit' : p))
-  }, [menuOpen, openingStage])
-
-  /* Snap close when menu never reached full open */
+  /* If clip-path transitionend never fires, still tear down overlay */
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (menuOpen) return
-    if (!overlayVisible) return
-    if (openingStage === 'open') return
-    if (closeClipPhase !== null) return
-    setOpeningStage('idle')
-    setOverlayAnimIn(false)
-    const t = window.setTimeout(() => setOverlayVisible(false), PAVE_OVERLAY_UNMOUNT_MS)
+    if (menuOpen || !overlayVisible) return
+    const ms = PAVE_CURTAIN_CLOSE_MS + 400
+    const t = window.setTimeout(() => {
+      setOpeningStage('idle')
+      setOverlayAnimIn(false)
+      setOverlayVisible(false)
+    }, ms)
     return () => clearTimeout(t)
-  }, [menuOpen, openingStage, closeClipPhase, overlayVisible])
+  }, [menuOpen, overlayVisible])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -288,14 +276,13 @@ export default function Navbar3Page() {
     if (e.propertyName !== 'clip-path') return
     if (e.target !== overlayRef.current) return
     const mOpen = menuOpenRef.current
-    const cPhase = closeClipPhaseRef.current
+    const ov = overlayVisibleRef.current
 
-    if (!mOpen && cPhase === 'toSlit') {
-      setCloseClipPhase('toDot')
-      return
-    }
-    if (!mOpen && cPhase === 'toDot') {
-      setCloseClipPhase(null)
+    if (
+      !mOpen &&
+      ov &&
+      e.elapsedTime >= (PAVE_CURTAIN_CLOSE_MS / 1000) * 0.85
+    ) {
       setOpeningStage('idle')
       setOverlayAnimIn(false)
       setOverlayVisible(false)
@@ -313,29 +300,18 @@ export default function Navbar3Page() {
   const slitClip = menuSlitClip(isDesktop)
   const fullClip = 'inset(0 0 0 0)'
 
-  /** Fully-open close: mirror open (phase2 full→slit, then phase1 slit→dot). `closeClipPhase` null + `open` = same frame before layout commits `toSlit`. */
-  const reverseCloseActive =
-    !menuOpen &&
-    (closeClipPhase === 'toSlit' ||
-      closeClipPhase === 'toDot' ||
-      (openingStage === 'open' && closeClipPhase === null))
-  const reverseClosePhase = closeClipPhase ?? 'toSlit'
+  /** Menu closed but overlay still mounted = curtain close (L/R insets → center) */
+  const curtainClosing = !menuOpen && overlayVisible
 
   let menuClipPath: string
   let menuClipTransition: string
-  if (reverseCloseActive && reverseClosePhase === 'toSlit') {
-    menuClipPath = slitClip
-    menuClipTransition = `clip-path ${PAVE_WIPE_PHASE2_MS}ms ${PAVE_WIPE_PHASE2_EASE}, opacity 0s`
-  } else if (reverseCloseActive && reverseClosePhase === 'toDot') {
-    menuClipPath = MENU_CLIP_DOT
-    menuClipTransition = `clip-path ${PAVE_WIPE_PHASE1_MS}ms ${PAVE_WIPE_PHASE1_EASE}, opacity 0s`
-  } else if (!menuOpen) {
-    menuClipPath = slitClip
-    menuClipTransition = `clip-path ${PAVE_OUTER_CLIP_CLOSE_MS}ms ${PAVE_OUTER_CLIP_CLOSE_EASE}, opacity 300ms linear`
-  } else if (!overlayAnimIn) {
+  if (curtainClosing) {
+    menuClipPath = PAVE_MENU_CLIP_CURTAIN_CLOSED
+    menuClipTransition = `clip-path ${PAVE_CURTAIN_CLOSE_MS}ms ${PAVE_CURTAIN_CLOSE_EASE}, opacity 0s`
+  } else if (menuOpen && !overlayAnimIn) {
     menuClipPath = MENU_CLIP_DOT
     menuClipTransition = 'clip-path 0s linear 0s, opacity 0s'
-  } else {
+  } else if (menuOpen) {
     switch (openingStage) {
       case 'idle':
         menuClipPath = MENU_CLIP_DOT
@@ -354,6 +330,9 @@ export default function Navbar3Page() {
         menuClipTransition = 'clip-path 0s linear 0s, opacity 0s'
         break
     }
+  } else {
+    menuClipPath = PAVE_MENU_CLIP_CURTAIN_CLOSED
+    menuClipTransition = 'clip-path 0s linear 0s, opacity 0s'
   }
 
   const overlayFullOpen = menuOpen && openingStage === 'open'
@@ -481,9 +460,9 @@ export default function Navbar3Page() {
           onTransitionEnd={onOverlayClipTransitionEnd}
           className={cn(
             'fixed inset-0 z-[200] overflow-x-hidden overflow-y-auto bg-pave-menu-screen',
-            (menuOpen || reverseCloseActive) && 'will-change-[clip-path]',
+            overlayVisible && 'will-change-[clip-path]',
             menuOpen && overlayFullOpen ? 'pointer-events-auto' : 'pointer-events-none',
-            menuOpen || reverseCloseActive ? 'opacity-100' : 'opacity-0',
+            'opacity-100',
           )}
           style={{
             clipPath: menuClipPath,

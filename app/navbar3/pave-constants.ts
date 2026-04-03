@@ -21,16 +21,15 @@ export const PAVE_WIPE_PHASE1_MS = 520
 export const PAVE_WIPE_PHASE1_EASE = 'cubic-bezier(0.36, 0.05, 0, 1)'
 export const PAVE_WIPE_PHASE2_MS = 600
 export const PAVE_WIPE_PHASE2_EASE = 'cubic-bezier(0.82, 0, 0, 1)'
-export const PAVE_OUTER_CLIP_CLOSE_MS = PAVE_WIPE_PHASE2_MS
-export const PAVE_OUTER_CLIP_CLOSE_EASE = PAVE_WIPE_PHASE2_EASE
 
-/** Snap close (menu not fully open): outer wipe + opacity buffer before unmount */
-export const PAVE_OVERLAY_UNMOUNT_MS = PAVE_WIPE_PHASE1_MS + PAVE_WIPE_PHASE2_MS + 220
+/** Close: left/right curtains meet at center (inset from both sides), not a mirror of open */
+export const PAVE_CURTAIN_CLOSE_MS = 720
+export const PAVE_CURTAIN_CLOSE_EASE = 'cubic-bezier(0.45, 0, 0.25, 1)'
+/** Closed mask: 50% inset from left + 50% from right → slit at center */
+export const PAVE_MENU_CLIP_CURTAIN_CLOSED = 'inset(0 50% 0 50%)'
 
-/** Two-phase reverse = phase2 (full→slit) + phase1 (slit→dot) — mirror of opening */
-export const PAVE_OVERLAY_REVERSE_CLOSE_MS = PAVE_WIPE_PHASE2_MS + PAVE_WIPE_PHASE1_MS
-/** Client nav after overlay link click: wait for full reverse wipe */
-export const PAVE_OVERLAY_NAV_AFTER_REVERSE_MS = PAVE_OVERLAY_REVERSE_CLOSE_MS + 200
+/** Client nav after overlay link: wait for curtain animation */
+export const PAVE_OVERLAY_NAV_AFTER_CURTAIN_MS = PAVE_CURTAIN_CLOSE_MS + 200
 
 /** Seam line clip timing (matches old inner wipe). */
 export const PAVE_INNER_CLIP_MS = 820
