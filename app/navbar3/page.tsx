@@ -459,7 +459,7 @@ export default function Navbar3Page() {
           aria-hidden={!menuOpen}
           onTransitionEnd={onOverlayClipTransitionEnd}
           className={cn(
-            'fixed inset-0 z-[200] overflow-x-hidden overflow-y-auto bg-pave-menu-screen',
+            'fixed inset-0 z-[200] overflow-x-hidden overflow-y-auto bg-pave-menu-screen pave-scrollbar-none',
             overlayVisible && 'will-change-[clip-path]',
             menuOpen && overlayFullOpen ? 'pointer-events-auto' : 'pointer-events-none',
             'opacity-100',
