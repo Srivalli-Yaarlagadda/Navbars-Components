@@ -1,3 +1,4 @@
+import type { MouseEventHandler } from 'react'
 import { cn } from '@/lib/utils'
 import {
   PAVE_MENU_ICON_BAR_WIDTH,
@@ -32,7 +33,7 @@ export function ExternalArrow({ className }: { className?: string }) {
 export function PaveLogo({ className }: { className?: string }) {
   return (
     <a
-      href="#"
+      href="/"
       className={cn(
         'group inline-flex items-baseline gap-0 text-[1.3125rem] font-bold uppercase tracking-[0.16em] leading-none text-white transition-opacity hover:opacity-80',
         className,
@@ -48,10 +49,17 @@ export function PaveLogo({ className }: { className?: string }) {
   )
 }
 
-export function PaveLogoDark({ className }: { className?: string }) {
+export function PaveLogoDark({
+  className,
+  onClick,
+}: {
+  className?: string
+  onClick?: MouseEventHandler<HTMLAnchorElement>
+}) {
   return (
     <a
-      href="#"
+      href="/"
+      onClick={onClick}
       className={cn(
         'group inline-flex items-baseline gap-0 text-[1.3125rem] font-bold uppercase tracking-[0.16em] leading-none text-black transition-opacity hover:opacity-70',
         className,

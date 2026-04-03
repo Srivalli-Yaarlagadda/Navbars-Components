@@ -1,6 +1,14 @@
 'use client'
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { cn } from '@/lib/utils'
 import {
   NAV_LINKS,
@@ -25,7 +33,9 @@ import {
   PAVE_OUTER_CLIP_CLOSE_MS,
   PAVE_OVERLAY_COL_LEFT,
   PAVE_OVERLAY_COL_RIGHT,
+  PAVE_OVERLAY_NAV_AFTER_REVERSE_MS,
   PAVE_OVERLAY_NAV_LINK,
+  PAVE_OVERLAY_UNMOUNT_MS,
   PAVE_WIPE_PHASE1_EASE,
   PAVE_WIPE_PHASE1_MS,
   PAVE_WIPE_PHASE2_EASE,
@@ -50,6 +60,9 @@ const MENU_CLIP_DOT = 'inset(48% 48% 48% 48%)'
 
 type MenuOpeningStage = 'idle' | 'growV' | 'growH' | 'open'
 
+/** Outer clip reverse: full → slit (phase2), then slit → dot (phase1) */
+type CloseClipPhase = null | 'toSlit' | 'toDot'
+
 function menuSlitClip(isDesktop: boolean) {
   if (!isDesktop) {
     return 'inset(calc(50% - 2px) 0 calc(50% - 2px) 0)'
@@ -73,8 +86,6 @@ function useMinWidth700() {
   return isDesktop
 }
 
-const PAVE_OVERLAY_UNMOUNT_MS = PAVE_WIPE_PHASE1_MS + PAVE_WIPE_PHASE2_MS + 220
-
 /** After overlay links finish stagger-in, clear transition-delay so hover opacity (dim siblings) is instant. */
 function overlayLinksEntranceSettleMs() {
   const last = OVERLAY_LINKS.length - 1
@@ -87,13 +98,21 @@ function overlayLinksEntranceSettleMs() {
 }
 
 export default function Navbar3Page() {
+  const router = useRouter()
+  const overlayNavAfterCloseRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const menuOpenRef = useRef(false)
+  const closeClipPhaseRef = useRef<CloseClipPhase>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [overlayVisible, setOverlayVisible] = useState(false)
   const [overlayAnimIn, setOverlayAnimIn] = useState(false)
   const [openingStage, setOpeningStage] = useState<MenuOpeningStage>('idle')
+  const [closeClipPhase, setCloseClipPhase] = useState<CloseClipPhase>(null)
   const [overlayContentIdle, setOverlayContentIdle] = useState(false)
   const isDesktop = useMinWidth700()
   const overlayRef = useRef<HTMLDivElement>(null)
+
+  menuOpenRef.current = menuOpen
+  closeClipPhaseRef.current = closeClipPhase
 
   const menuContentVisible = useMemo(
     () =>
@@ -162,36 +181,77 @@ export default function Navbar3Page() {
 
   const closeMenu = useCallback(() => setMenuOpen(false), [])
 
-  /* Two rAFs commit dot; third starts vertical slit (outer two-phase wipe). */
+  /** Close full-screen menu, run clip-path close animation, then navigate (overlay links only). */
+  const handleOverlayNavClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>) => {
+      if (!menuOpen) return
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+      e.preventDefault()
+      const href = e.currentTarget.getAttribute('href') || '/'
+      if (overlayNavAfterCloseRef.current) clearTimeout(overlayNavAfterCloseRef.current)
+      setMenuOpen(false)
+      overlayNavAfterCloseRef.current = setTimeout(() => {
+        overlayNavAfterCloseRef.current = null
+        router.push(href)
+      }, PAVE_OVERLAY_NAV_AFTER_REVERSE_MS)
+    },
+    [menuOpen, router],
+  )
+
+  useEffect(
+    () => () => {
+      if (overlayNavAfterCloseRef.current) clearTimeout(overlayNavAfterCloseRef.current)
+    },
+    [],
+  )
+
+  /* Open: two rAFs commit dot; third starts vertical slit (outer two-phase wipe). */
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (menuOpen) {
-      setOverlayVisible(true)
-      setOpeningStage('idle')
-      let cancelled = false
-      let raf2 = 0
-      let raf3 = 0
-      const raf1 = requestAnimationFrame(() => {
-        raf2 = requestAnimationFrame(() => {
-          if (cancelled) return
-          setOverlayAnimIn(true)
-          raf3 = requestAnimationFrame(() => {
-            if (!cancelled) setOpeningStage('growV')
-          })
+    if (!menuOpen) return
+    setCloseClipPhase(null)
+    setOverlayVisible(true)
+    setOpeningStage('idle')
+    let cancelled = false
+    let raf2 = 0
+    let raf3 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        if (cancelled) return
+        setOverlayAnimIn(true)
+        raf3 = requestAnimationFrame(() => {
+          if (!cancelled) setOpeningStage('growV')
         })
       })
-      return () => {
-        cancelled = true
-        cancelAnimationFrame(raf1)
-        cancelAnimationFrame(raf2)
-        cancelAnimationFrame(raf3)
-      }
+    })
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+      cancelAnimationFrame(raf3)
     }
+  }, [menuOpen])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  /* Fully open → reverse wipe starts same frame (before paint) */
+  useLayoutEffect(() => {
+    if (menuOpen) return
+    if (openingStage !== 'open') return
+    setCloseClipPhase((p) => (p === null ? 'toSlit' : p))
+  }, [menuOpen, openingStage])
+
+  /* Snap close when menu never reached full open */
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (menuOpen) return
+    if (!overlayVisible) return
+    if (openingStage === 'open') return
+    if (closeClipPhase !== null) return
     setOpeningStage('idle')
     setOverlayAnimIn(false)
     const t = window.setTimeout(() => setOverlayVisible(false), PAVE_OVERLAY_UNMOUNT_MS)
     return () => clearTimeout(t)
-  }, [menuOpen])
+  }, [menuOpen, openingStage, closeClipPhase, overlayVisible])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -227,19 +287,49 @@ export default function Navbar3Page() {
   const onOverlayClipTransitionEnd = useCallback((e: React.TransitionEvent<HTMLDivElement>) => {
     if (e.propertyName !== 'clip-path') return
     if (e.target !== overlayRef.current) return
-    setOpeningStage((s) => {
-      if (s === 'growV') return 'growH'
-      if (s === 'growH') return 'open'
-      return s
-    })
+    const mOpen = menuOpenRef.current
+    const cPhase = closeClipPhaseRef.current
+
+    if (!mOpen && cPhase === 'toSlit') {
+      setCloseClipPhase('toDot')
+      return
+    }
+    if (!mOpen && cPhase === 'toDot') {
+      setCloseClipPhase(null)
+      setOpeningStage('idle')
+      setOverlayAnimIn(false)
+      setOverlayVisible(false)
+      return
+    }
+    if (mOpen) {
+      setOpeningStage((s) => {
+        if (s === 'growV') return 'growH'
+        if (s === 'growH') return 'open'
+        return s
+      })
+    }
   }, [])
 
   const slitClip = menuSlitClip(isDesktop)
   const fullClip = 'inset(0 0 0 0)'
 
+  /** Fully-open close: mirror open (phase2 full→slit, then phase1 slit→dot). `closeClipPhase` null + `open` = same frame before layout commits `toSlit`. */
+  const reverseCloseActive =
+    !menuOpen &&
+    (closeClipPhase === 'toSlit' ||
+      closeClipPhase === 'toDot' ||
+      (openingStage === 'open' && closeClipPhase === null))
+  const reverseClosePhase = closeClipPhase ?? 'toSlit'
+
   let menuClipPath: string
   let menuClipTransition: string
-  if (!menuOpen) {
+  if (reverseCloseActive && reverseClosePhase === 'toSlit') {
+    menuClipPath = slitClip
+    menuClipTransition = `clip-path ${PAVE_WIPE_PHASE2_MS}ms ${PAVE_WIPE_PHASE2_EASE}, opacity 0s`
+  } else if (reverseCloseActive && reverseClosePhase === 'toDot') {
+    menuClipPath = MENU_CLIP_DOT
+    menuClipTransition = `clip-path ${PAVE_WIPE_PHASE1_MS}ms ${PAVE_WIPE_PHASE1_EASE}, opacity 0s`
+  } else if (!menuOpen) {
     menuClipPath = slitClip
     menuClipTransition = `clip-path ${PAVE_OUTER_CLIP_CLOSE_MS}ms ${PAVE_OUTER_CLIP_CLOSE_EASE}, opacity 300ms linear`
   } else if (!overlayAnimIn) {
@@ -314,7 +404,7 @@ export default function Navbar3Page() {
                 {NAV_LINKS.map((label) => (
                   <li key={label} className="relative z-10 shrink-0">
                     <a
-                      href="#"
+                      href="/"
                       onMouseEnter={(e) => onPrimaryEnter(e.currentTarget)}
                       className={cn(
                         PAVE_HEADER_LINK,
@@ -355,7 +445,7 @@ export default function Navbar3Page() {
             {!menuOpen && (
               <>
                 <a
-                  href="#"
+                  href="/"
                   onMouseEnter={(e) => onCtaEnter(e.currentTarget)}
                   className={cn(
                     PAVE_HEADER_LINK,
@@ -366,7 +456,7 @@ export default function Navbar3Page() {
                   <ExternalArrow className="shrink-0 transition-transform duration-300 ease-out group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                 </a>
                 <a
-                  href="#"
+                  href="/"
                   onMouseEnter={(e) => onCtaEnter(e.currentTarget)}
                   className={cn(
                     PAVE_HEADER_LINK,
@@ -391,9 +481,9 @@ export default function Navbar3Page() {
           onTransitionEnd={onOverlayClipTransitionEnd}
           className={cn(
             'fixed inset-0 z-[200] overflow-x-hidden overflow-y-auto bg-pave-menu-screen',
-            menuOpen && 'will-change-[clip-path]',
+            (menuOpen || reverseCloseActive) && 'will-change-[clip-path]',
             menuOpen && overlayFullOpen ? 'pointer-events-auto' : 'pointer-events-none',
-            menuOpen ? 'opacity-100' : 'opacity-0',
+            menuOpen || reverseCloseActive ? 'opacity-100' : 'opacity-0',
           )}
           style={{
             clipPath: menuClipPath,
@@ -427,7 +517,7 @@ export default function Navbar3Page() {
                 )}
               >
                 <div className="hidden min-h-16 shrink-0 items-start min-[700px]:flex min-[700px]:justify-start">
-                  <PaveLogoDark />
+                  <PaveLogoDark onClick={handleOverlayNavClick} />
                 </div>
 
                 <nav
@@ -440,7 +530,8 @@ export default function Navbar3Page() {
                   {OVERLAY_LINKS.map((item, i) => (
                     <a
                       key={item.label}
-                      href="#"
+                      href="/"
+                      onClick={handleOverlayNavClick}
                       className={cn(
                         PAVE_OVERLAY_NAV_LINK,
                         'group relative inline-flex w-max max-w-full items-center gap-2 text-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black',
@@ -561,7 +652,8 @@ export default function Navbar3Page() {
                   }}
                 >
                   <a
-                    href="#"
+                    href="/"
+                    onClick={handleOverlayNavClick}
                     className={cn(
                       PAVE_MENU_NAV,
                       'group relative inline-flex w-max max-w-full items-center gap-2 text-black transition-opacity duration-300 ease-out focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black',
