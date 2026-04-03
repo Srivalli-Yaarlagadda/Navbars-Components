@@ -1,14 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import {
   NAV_LINKS,
   OVERLAY_LINKS,
-  PAVE_CENTER_LINE_CLOSE_MS,
-  PAVE_CENTER_LINE_OPEN_DELAY_MS,
-  PAVE_CENTER_LINE_OPEN_EASE,
-  PAVE_CENTER_LINE_OPEN_MS,
   PAVE_CONTENT_BASE_DELAY_MS,
   PAVE_CONTENT_STAGGER_LEAD_MS,
   PAVE_CONTENT_STAGGER_MS,
@@ -16,17 +12,24 @@ import {
   PAVE_GUTTER_X,
   PAVE_HEADER_H,
   PAVE_HEADER_LINK,
-  PAVE_INNER_CLIP_DELAY_MS,
+  PAVE_CENTER_LINE_CLOSE_MS,
+  PAVE_CENTER_LINE_OPEN_DELAY_MS,
+  PAVE_INNER_CLIP_CLOSE_MS,
   PAVE_INNER_CLIP_EASE,
   PAVE_INNER_CLIP_MS,
   PAVE_LABEL_SMALL,
   PAVE_MENU_NAV,
-  PAVE_OUTER_CLIP_DELAY_MS,
-  PAVE_OUTER_CLIP_EASE,
-  PAVE_OUTER_CLIP_MS,
+  PAVE_MENU_SEAM_OFFSET_X_PX,
+  PAVE_MENU_SLIT_HALF_PX,
+  PAVE_OUTER_CLIP_CLOSE_EASE,
+  PAVE_OUTER_CLIP_CLOSE_MS,
   PAVE_OVERLAY_COL_LEFT,
   PAVE_OVERLAY_COL_RIGHT,
   PAVE_OVERLAY_NAV_LINK,
+  PAVE_WIPE_PHASE1_EASE,
+  PAVE_WIPE_PHASE1_MS,
+  PAVE_WIPE_PHASE2_EASE,
+  PAVE_WIPE_PHASE2_MS,
   SLIDE_EASE,
   SLIDE_MS,
   measureNavUnderline,
@@ -43,6 +46,35 @@ import {
 const BAR_INSET =
   'min-[1100px]:px-[max(20px,calc((100vw-1920px)/2+20px))]'
 
+const MENU_CLIP_DOT = 'inset(48% 48% 48% 48%)'
+
+type MenuOpeningStage = 'idle' | 'growV' | 'growH' | 'open'
+
+function menuSlitClip(isDesktop: boolean) {
+  if (!isDesktop) {
+    return 'inset(calc(50% - 2px) 0 calc(50% - 2px) 0)'
+  }
+  const o = PAVE_MENU_SEAM_OFFSET_X_PX
+  const w = PAVE_MENU_SLIT_HALF_PX
+  return `inset(0 calc(50% + ${o - w}px) 0 calc(50% - ${o + w}px))`
+}
+
+function useMinWidth700() {
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 700px)').matches,
+  )
+  useLayoutEffect(() => {
+    const mq = window.matchMedia('(min-width: 700px)')
+    const sync = () => setIsDesktop(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+  return isDesktop
+}
+
+const PAVE_OVERLAY_UNMOUNT_MS = PAVE_WIPE_PHASE1_MS + PAVE_WIPE_PHASE2_MS + 220
+
 /** After overlay links finish stagger-in, clear transition-delay so hover opacity (dim siblings) is instant. */
 function overlayLinksEntranceSettleMs() {
   const last = OVERLAY_LINKS.length - 1
@@ -58,7 +90,18 @@ export default function Navbar3Page() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [overlayVisible, setOverlayVisible] = useState(false)
   const [overlayAnimIn, setOverlayAnimIn] = useState(false)
+  const [openingStage, setOpeningStage] = useState<MenuOpeningStage>('idle')
   const [overlayContentIdle, setOverlayContentIdle] = useState(false)
+  const isDesktop = useMinWidth700()
+  const overlayRef = useRef<HTMLDivElement>(null)
+
+  const menuContentVisible = useMemo(
+    () =>
+      menuOpen &&
+      overlayAnimIn &&
+      (isDesktop ? openingStage === 'growH' || openingStage === 'open' : openingStage !== 'idle'),
+    [menuOpen, overlayAnimIn, isDesktop, openingStage],
+  )
 
   const primaryNavRef = useRef<HTMLUListElement>(null)
   const [primaryLine, setPrimaryLine] = useState<UnderlineLineState>({
@@ -119,18 +162,21 @@ export default function Navbar3Page() {
 
   const closeMenu = useCallback(() => setMenuOpen(false), [])
 
-  /* Overlay mount + delayed unmount follow menuOpen (PAVE clip-out). Effect cleanup clears timer/rAF on reopen. */
+  /* Two rAFs commit dot; third starts vertical slit (outer two-phase wipe). */
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (menuOpen) {
       setOverlayVisible(true)
+      setOpeningStage('idle')
       let cancelled = false
       let raf2 = 0
       let raf3 = 0
       const raf1 = requestAnimationFrame(() => {
         raf2 = requestAnimationFrame(() => {
+          if (cancelled) return
+          setOverlayAnimIn(true)
           raf3 = requestAnimationFrame(() => {
-            if (!cancelled) setOverlayAnimIn(true)
+            if (!cancelled) setOpeningStage('growV')
           })
         })
       })
@@ -141,8 +187,9 @@ export default function Navbar3Page() {
         cancelAnimationFrame(raf3)
       }
     }
+    setOpeningStage('idle')
     setOverlayAnimIn(false)
-    const t = window.setTimeout(() => setOverlayVisible(false), 580)
+    const t = window.setTimeout(() => setOverlayVisible(false), PAVE_OVERLAY_UNMOUNT_MS)
     return () => clearTimeout(t)
   }, [menuOpen])
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -159,14 +206,14 @@ export default function Navbar3Page() {
   /* Reset idle when menu closes; arm fast hover transitions after stagger-in completes. */
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!overlayAnimIn) {
+    if (!menuContentVisible) {
       setOverlayContentIdle(false)
       return
     }
     const ms = overlayLinksEntranceSettleMs()
     const t = window.setTimeout(() => setOverlayContentIdle(true), ms)
     return () => clearTimeout(t)
-  }, [overlayAnimIn])
+  }, [menuContentVisible])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
@@ -177,12 +224,51 @@ export default function Navbar3Page() {
     return () => window.removeEventListener('keydown', onKey)
   }, [closeMenu])
 
-  /** Open wipe + inner clip must use clip-path transition keyed off menuOpen, not overlayAnimIn — otherwise first paint uses the *close* timing (clip 0ms) and the reveal jumps to full. */
-  const overlayExpanded = menuOpen && overlayAnimIn
-  const outerClipCollapsed =
-    'max-[699px]:[clip-path:inset(calc(50%_-_2px)_0_calc(50%_-_2px)_0)] min-[700px]:[clip-path:inset(0_calc(50%_-_2px)_0_calc(50%_-_2px))]'
-  const innerClipCollapsed =
-    'max-[699px]:[clip-path:inset(0_50%_0_50%)] min-[700px]:[clip-path:inset(50%_0_50%_0)]'
+  const onOverlayClipTransitionEnd = useCallback((e: React.TransitionEvent<HTMLDivElement>) => {
+    if (e.propertyName !== 'clip-path') return
+    if (e.target !== overlayRef.current) return
+    setOpeningStage((s) => {
+      if (s === 'growV') return 'growH'
+      if (s === 'growH') return 'open'
+      return s
+    })
+  }, [])
+
+  const slitClip = menuSlitClip(isDesktop)
+  const fullClip = 'inset(0 0 0 0)'
+
+  let menuClipPath: string
+  let menuClipTransition: string
+  if (!menuOpen) {
+    menuClipPath = slitClip
+    menuClipTransition = `clip-path ${PAVE_OUTER_CLIP_CLOSE_MS}ms ${PAVE_OUTER_CLIP_CLOSE_EASE}, opacity 300ms linear`
+  } else if (!overlayAnimIn) {
+    menuClipPath = MENU_CLIP_DOT
+    menuClipTransition = 'clip-path 0s linear 0s, opacity 0s'
+  } else {
+    switch (openingStage) {
+      case 'idle':
+        menuClipPath = MENU_CLIP_DOT
+        menuClipTransition = 'clip-path 0s linear 0s, opacity 0s'
+        break
+      case 'growV':
+        menuClipPath = slitClip
+        menuClipTransition = `clip-path ${PAVE_WIPE_PHASE1_MS}ms ${PAVE_WIPE_PHASE1_EASE}, opacity 0s`
+        break
+      case 'growH':
+        menuClipPath = fullClip
+        menuClipTransition = `clip-path ${PAVE_WIPE_PHASE2_MS}ms ${PAVE_WIPE_PHASE2_EASE}, opacity 0s`
+        break
+      case 'open':
+        menuClipPath = fullClip
+        menuClipTransition = 'clip-path 0s linear 0s, opacity 0s'
+        break
+    }
+  }
+
+  const overlayFullOpen = menuOpen && openingStage === 'open'
+  const centerLineRevealing = menuOpen && openingStage === 'growH'
+  const centerLineVisible = menuOpen && (openingStage === 'growH' || openingStage === 'open')
 
   return (
     <>
@@ -297,48 +383,39 @@ export default function Navbar3Page() {
 
       {overlayVisible && (
         <div
+          ref={overlayRef}
           role="dialog"
           aria-modal="true"
           aria-label="Site navigation"
           aria-hidden={!menuOpen}
+          onTransitionEnd={onOverlayClipTransitionEnd}
           className={cn(
-            'fixed inset-0 z-[200] overflow-x-hidden overflow-y-auto bg-pave-menu-screen [contain:paint]',
+            'fixed inset-0 z-[200] overflow-x-hidden overflow-y-auto bg-pave-menu-screen',
             menuOpen && 'will-change-[clip-path]',
-            overlayExpanded
-              ? 'pointer-events-auto opacity-100 [clip-path:inset(0_0_0_0)]'
-              : cn(
-                  'pointer-events-none',
-                  outerClipCollapsed,
-                  menuOpen ? 'opacity-100' : 'opacity-0',
-                ),
+            menuOpen && overlayFullOpen ? 'pointer-events-auto' : 'pointer-events-none',
+            menuOpen ? 'opacity-100' : 'opacity-0',
           )}
           style={{
-            transition: menuOpen
-              ? `clip-path ${PAVE_OUTER_CLIP_MS}ms ${PAVE_OUTER_CLIP_EASE} ${PAVE_OUTER_CLIP_DELAY_MS}ms, opacity 0s`
-              : `opacity 380ms cubic-bezier(0.4,0,0.2,1), clip-path 420ms ${PAVE_OUTER_CLIP_EASE} 120ms`,
+            clipPath: menuClipPath,
+            transition: menuClipTransition,
           }}
         >
-          <div
-            className={cn(
-              'relative min-h-dvh overflow-hidden',
-              menuOpen && 'will-change-[clip-path]',
-              overlayExpanded ? '[clip-path:inset(0_0_0_0)]' : innerClipCollapsed,
-            )}
-            style={{
-              transition: `clip-path ${PAVE_INNER_CLIP_MS}ms ${PAVE_INNER_CLIP_EASE}`,
-              transitionDelay: overlayAnimIn ? `${PAVE_INNER_CLIP_DELAY_MS}ms` : '0ms',
-            }}
-          >
+          <div className="relative min-h-dvh overflow-hidden">
             <div
               aria-hidden
-              className="pointer-events-none absolute left-1/2 top-1/2 z-[5] hidden h-dvh w-px origin-center bg-black will-change-transform min-[700px]:block"
+              className={cn(
+                'pointer-events-none absolute inset-y-0 z-[5] hidden min-[700px]:block min-[700px]:w-px min-[700px]:bg-black min-[700px]:left-[calc(50%-10px)]',
+                menuOpen && overlayAnimIn && 'min-[700px]:will-change-[clip-path]',
+                centerLineVisible
+                  ? 'min-[700px]:[clip-path:inset(0_0_0_0)]'
+                  : 'min-[700px]:[clip-path:inset(50%_0_50%_0)]',
+              )}
               style={{
-                transform: overlayAnimIn
-                  ? 'translate(-50%, -50%) scaleY(1)'
-                  : 'translate(-50%, -50%) scaleY(0)',
-                transition: overlayAnimIn
-                  ? `transform ${PAVE_CENTER_LINE_OPEN_MS}ms ${PAVE_CENTER_LINE_OPEN_EASE} ${PAVE_CENTER_LINE_OPEN_DELAY_MS}ms`
-                  : `transform ${PAVE_CENTER_LINE_CLOSE_MS}ms ${PAVE_INNER_CLIP_EASE} 0ms`,
+                transition: menuOpen
+                  ? centerLineRevealing
+                    ? `clip-path ${PAVE_INNER_CLIP_MS}ms ${PAVE_INNER_CLIP_EASE} 0ms`
+                    : 'clip-path 0s linear 0ms'
+                  : `clip-path ${PAVE_INNER_CLIP_CLOSE_MS}ms ${PAVE_INNER_CLIP_EASE} 0ms`,
               }}
             />
 
@@ -367,18 +444,18 @@ export default function Navbar3Page() {
                       className={cn(
                         PAVE_OVERLAY_NAV_LINK,
                         'group relative inline-flex w-max max-w-full items-center gap-2 text-black focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black',
-                        overlayAnimIn ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0',
+                        menuContentVisible ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0',
                       )}
                       style={{
                         transition: overlayContentIdle
                           ? 'transform 420ms cubic-bezier(0.16,1,0.3,1), opacity 90ms ease-out'
-                          : overlayAnimIn
+                          : menuContentVisible
                             ? 'transform 560ms cubic-bezier(0.16,1,0.3,1), opacity 520ms cubic-bezier(0.16,1,0.3,1)'
                             : 'transform 400ms cubic-bezier(0.16,1,0.3,1), opacity 400ms cubic-bezier(0.16,1,0.3,1)',
                         transitionDelay:
-                          overlayAnimIn && !overlayContentIdle
+                          menuContentVisible && !overlayContentIdle
                             ? `${PAVE_CONTENT_BASE_DELAY_MS + PAVE_CONTENT_STAGGER_LEAD_MS + i * PAVE_CONTENT_STAGGER_MS}ms, ${PAVE_CONTENT_BASE_DELAY_MS + PAVE_CONTENT_STAGGER_LEAD_MS + i * PAVE_CONTENT_STAGGER_MS}ms`
-                            : !overlayAnimIn
+                            : !menuContentVisible
                               ? `${(OVERLAY_LINKS.length - 1 - i) * 40}ms, ${(OVERLAY_LINKS.length - 1 - i) * 40}ms`
                               : '0ms, 0ms',
                       }}
@@ -403,16 +480,16 @@ export default function Navbar3Page() {
                   className={cn(
                     PAVE_LABEL_SMALL,
                     'max-w-[20rem] pb-6 text-black min-[700px]:hidden',
-                    overlayAnimIn ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0',
+                    menuContentVisible ? 'translate-y-0 opacity-100' : 'translate-y-2 opacity-0',
                   )}
                   style={{
                     transition: overlayContentIdle
                       ? 'opacity 90ms ease-out, transform 350ms cubic-bezier(0.22,1,0.36,1)'
                       : 'opacity 480ms cubic-bezier(0.22,1,0.36,1), transform 480ms cubic-bezier(0.22,1,0.36,1)',
                     transitionDelay:
-                      overlayAnimIn && !overlayContentIdle
+                      menuContentVisible && !overlayContentIdle
                         ? `${PAVE_CONTENT_BASE_DELAY_MS + 30}ms`
-                        : !overlayAnimIn
+                        : !menuContentVisible
                           ? '120ms'
                           : '0ms',
                   }}
@@ -423,16 +500,16 @@ export default function Navbar3Page() {
                 <div
                   className={cn(
                     'hidden min-h-16 shrink-0 items-start justify-start min-[700px]:flex',
-                    overlayAnimIn ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0',
+                    menuContentVisible ? 'translate-y-0 opacity-100' : '-translate-y-3 opacity-0',
                   )}
                   style={{
                     transition: overlayContentIdle
                       ? 'opacity 90ms ease-out, transform 350ms cubic-bezier(0.22,1,0.36,1)'
                       : 'opacity 480ms cubic-bezier(0.22,1,0.36,1), transform 480ms cubic-bezier(0.22,1,0.36,1)',
                     transitionDelay:
-                      overlayAnimIn && !overlayContentIdle
+                      menuContentVisible && !overlayContentIdle
                         ? `${PAVE_CONTENT_BASE_DELAY_MS + 40}ms`
-                        : !overlayAnimIn
+                        : !menuContentVisible
                           ? '200ms'
                           : '0ms',
                   }}
@@ -447,16 +524,16 @@ export default function Navbar3Page() {
                     className={cn(
                       PAVE_MENU_NAV,
                       'max-w-[16ch] text-black min-[1000px]:max-w-[15ch]',
-                      overlayAnimIn ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0',
+                      menuContentVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0',
                     )}
                     style={{
                       transition: overlayContentIdle
                         ? 'opacity 90ms ease-out, transform 400ms cubic-bezier(0.22,1,0.36,1)'
                         : 'opacity 520ms cubic-bezier(0.22,1,0.36,1), transform 520ms cubic-bezier(0.22,1,0.36,1)',
                       transitionDelay:
-                        overlayAnimIn && !overlayContentIdle
+                        menuContentVisible && !overlayContentIdle
                           ? `${PAVE_CONTENT_BASE_DELAY_MS + 100}ms`
-                          : !overlayAnimIn
+                          : !menuContentVisible
                             ? '120ms'
                             : '0ms',
                     }}
@@ -469,16 +546,16 @@ export default function Navbar3Page() {
                 <div
                   className={cn(
                     'mt-auto flex shrink-0 flex-row flex-wrap items-end justify-between gap-x-8 gap-y-6 pt-20 min-[700px]:pt-0',
-                    overlayAnimIn ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0',
+                    menuContentVisible ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0',
                   )}
                   style={{
                     transition: overlayContentIdle
                       ? 'opacity 90ms ease-out, transform 320ms ease-out'
                       : 'opacity 420ms ease-out, transform 420ms ease-out',
                     transitionDelay:
-                      overlayAnimIn && !overlayContentIdle
+                      menuContentVisible && !overlayContentIdle
                         ? `${PAVE_CONTENT_BASE_DELAY_MS + 160}ms`
-                        : !overlayAnimIn
+                        : !menuContentVisible
                           ? '60ms'
                           : '0ms',
                   }}

@@ -14,24 +14,32 @@ export const PAVE_MENU_ICON_TO_X_TOP = 'translate-y-[3px] rotate-45'
 export const PAVE_MENU_ICON_TO_X_BOT = '-translate-y-[3px] -rotate-45'
 
 /**
- * Full-screen menu clip — tuned for smooth nested wipe (reference-like, softer than linear snap).
+ * Outer menu: phase 1 = center → full-height slit, phase 2 = slit → full width.
+ * Seam line uses PAVE_INNER_* (classic vertical clip on the 1px bar), not the phase timings.
  */
-export const PAVE_OUTER_CLIP_MS = 880
-export const PAVE_OUTER_CLIP_DELAY_MS = 260
-export const PAVE_OUTER_CLIP_EASE = 'cubic-bezier(0.76, 0, 0.24, 1)'
-export const PAVE_INNER_CLIP_MS = 640
-/** Inner wipe starts shortly after outer (only while opening); closing uses 0 delay in page. */
-export const PAVE_INNER_CLIP_DELAY_MS = PAVE_OUTER_CLIP_DELAY_MS + 72
-export const PAVE_INNER_CLIP_EASE = 'cubic-bezier(0.33, 1, 0.32, 1)'
-/** Staggered content follows clip; slightly early reads more “locked in” with the wipe */
+export const PAVE_WIPE_PHASE1_MS = 520
+export const PAVE_WIPE_PHASE1_EASE = 'cubic-bezier(0.36, 0.05, 0, 1)'
+export const PAVE_WIPE_PHASE2_MS = 600
+export const PAVE_WIPE_PHASE2_EASE = 'cubic-bezier(0.82, 0, 0, 1)'
+export const PAVE_OUTER_CLIP_CLOSE_MS = PAVE_WIPE_PHASE2_MS
+export const PAVE_OUTER_CLIP_CLOSE_EASE = PAVE_WIPE_PHASE2_EASE
+
+/** Seam line clip timing (matches old inner wipe). */
+export const PAVE_INNER_CLIP_MS = 820
+export const PAVE_INNER_CLIP_DELAY_MS = 0
+export const PAVE_INNER_CLIP_EASE = 'cubic-bezier(0.36, 0.05, 0, 1)'
+export const PAVE_INNER_CLIP_CLOSE_MS = 400
+
+export const PAVE_CENTER_LINE_OPEN_DELAY_MS = Math.round(PAVE_INNER_CLIP_MS * 0.35)
+
+/** Desktop mask slit aligned with column seam at calc(50% - 10px). */
+export const PAVE_MENU_SEAM_OFFSET_X_PX = 10
+export const PAVE_MENU_SLIT_HALF_PX = 2
+export const PAVE_CENTER_LINE_CLOSE_MS = 280
+/** Staggered content follows clip */
 export const PAVE_CONTENT_BASE_DELAY_MS = 320
 export const PAVE_CONTENT_STAGGER_LEAD_MS = 48
 export const PAVE_CONTENT_STAGGER_MS = 44
-
-export const PAVE_CENTER_LINE_OPEN_DELAY_MS = PAVE_OUTER_CLIP_DELAY_MS
-export const PAVE_CENTER_LINE_OPEN_MS = PAVE_OUTER_CLIP_MS
-export const PAVE_CENTER_LINE_OPEN_EASE = PAVE_OUTER_CLIP_EASE
-export const PAVE_CENTER_LINE_CLOSE_MS = 360
 
 /** --font-size-title-menu: 2.875rem; breakpoints 699 / 999 / 1000 */
 export const PAVE_MENU_NAV =
@@ -61,7 +69,7 @@ export function measureNavUnderline(container: HTMLElement, anchor: HTMLElement)
   return { left, width: lineWidth, right, anchorLeft }
 }
 
-/** Layout: 15px mobile, 20px from 700px; desktop seam uses half-gutter on inner edge */
+/** Layout: 15px mobile, 20px from 700px */
 export const PAVE_GUTTER_X = 'px-[15px] min-[700px]:px-5'
 export const PAVE_GUTTER_GAP = 'gap-[15px] min-[700px]:gap-10'
 export const PAVE_OVERLAY_COL_LEFT = 'px-[15px] min-[700px]:pl-5 min-[700px]:pr-2.5'
